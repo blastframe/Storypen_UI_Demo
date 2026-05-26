@@ -278,6 +278,36 @@ final class TimelineViewModel {
         selectedSegmentID = nil
     }
 
+    func updateClipDrawingRange(_ id: UUID, start: Int? = nil, end: Int? = nil) {
+        mutateClip(id) { clip in
+            let maxFrame = clip.clipAsset.internalFrameCount
+            let nextStart = (start ?? clip.drawingStartFrame).clamped(to: 1...maxFrame)
+            let nextEnd = (end ?? clip.drawingEndFrame).clamped(to: nextStart...maxFrame)
+            clip.drawingStartFrame = nextStart
+            clip.drawingEndFrame = nextEnd
+        }
+    }
+
+    func updateClipInstanceRange(_ id: UUID, startFrame: Int? = nil, endFrame: Int? = nil) {
+        mutateClip(id) { clip in
+            let proposedStart = (startFrame ?? clip.startFrame).clamped(to: 1...config.totalFrames - 1)
+            let proposedEnd = (endFrame ?? clip.endFrame).clamped(to: proposedStart + 1...config.totalFrames)
+            clip.startFrame = proposedStart
+            clip.endFrame = proposedEnd
+        }
+    }
+
+    private func mutateClip(_ id: UUID, _ mutation: (inout ClipInstance) -> Void) {
+        for layerIdx in layers.indices {
+            for segIdx in layers[layerIdx].segments.indices {
+                guard case .clipInstance(var clip) = layers[layerIdx].segments[segIdx], clip.id == id else { continue }
+                mutation(&clip)
+                layers[layerIdx].segments[segIdx] = .clipInstance(clip)
+                return
+            }
+        }
+    }
+
     // MARK: – Computed Helpers
 
     /// Timecode string for a given frame: MM:SS:FF

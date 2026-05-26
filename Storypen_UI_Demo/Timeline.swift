@@ -135,6 +135,12 @@ struct ClipInstance: Identifiable, Hashable {
     var startFrame:   Int
     var endFrame:     Int
     var playbackMode: ClipPlaybackMode
+    /// 1-based start frame inside the clip asset that marks where authored
+    /// drawings begin.
+    var drawingStartFrame: Int
+    /// 1-based end frame inside the clip asset that marks where authored
+    /// drawings end. Playback mode fills any remaining clip duration.
+    var drawingEndFrame: Int
 
     init(
         id: UUID = UUID(),
@@ -148,6 +154,8 @@ struct ClipInstance: Identifiable, Hashable {
         self.startFrame   = startFrame
         self.endFrame     = max(startFrame + 1, endFrame)
         self.playbackMode = playbackMode
+        self.drawingStartFrame = 1
+        self.drawingEndFrame = clipAsset.internalFrameCount
     }
 }
 

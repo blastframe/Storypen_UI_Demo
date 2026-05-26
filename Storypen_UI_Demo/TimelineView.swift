@@ -240,6 +240,7 @@ private struct TrackHeaderRow: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(layer.isSelected ? AppTheme.actionOrange : AppTheme.secondaryText)
                         .frame(width: 14)
+                        .padding(.leading, 4)
                 }
                 .buttonStyle(.plain)
 
@@ -371,17 +372,18 @@ private struct TimelineRulerView: View {
                 }
             }
 
-            // Playhead diamond marker
+            // Playhead pentagon marker
             let playX = CGFloat(viewModel.currentFrame - 1) * ppf
-            var diamond = Path()
-            let dW: CGFloat = 6
-            let dH: CGFloat = 8
-            diamond.move(to:    CGPoint(x: playX,      y: 0))
-            diamond.addLine(to: CGPoint(x: playX + dW, y: dH * 0.5))
-            diamond.addLine(to: CGPoint(x: playX,      y: dH))
-            diamond.addLine(to: CGPoint(x: playX - dW, y: dH * 0.5))
-            diamond.closeSubpath()
-            context.fill(diamond, with: .color(AppTheme.actionOrange))
+            let halfW: CGFloat = 6
+            let h: CGFloat = 10
+            var pentagon = Path()
+            pentagon.move(to: CGPoint(x: playX, y: 0))
+            pentagon.addLine(to: CGPoint(x: playX + halfW, y: h * 0.38))
+            pentagon.addLine(to: CGPoint(x: playX + halfW * 0.68, y: h))
+            pentagon.addLine(to: CGPoint(x: playX - halfW * 0.68, y: h))
+            pentagon.addLine(to: CGPoint(x: playX - halfW, y: h * 0.38))
+            pentagon.closeSubpath()
+            context.fill(pentagon, with: .color(AppTheme.actionOrange))
         }
         .background(AppTheme.baseBackground)
         // No DragGesture here — scrubbing is handled by the parent container
@@ -436,7 +438,7 @@ private struct PlayheadLine: View {
         let x = viewModel.xPosition(for: viewModel.currentFrame)
         Rectangle()
             .fill(AppTheme.actionOrange)
-            .frame(width: 1)
+            .frame(width: 2)
             .offset(x: x)
     }
 }
@@ -553,6 +555,7 @@ private struct ClipInstanceBlock: View {
             } else {
                 AppTheme.clipFill
             }
+            clipMiniMap(width: width, height: h)
 
             HStack(spacing: 5) {
                 Circle()
@@ -580,5 +583,66 @@ private struct ClipInstanceBlock: View {
         .frame(width: width, height: h)
         .cornerRadius(2)
         .offset(x: x, y: 0)
+        .overlay(alignment: .leading) { resizeHandle(edge: .leading, height: h) }
+        .overlay(alignment: .trailing) { resizeHandle(edge: .trailing, height: h) }
+    }
+
+    private enum Edge { case leading, trailing }
+
+    @ViewBuilder
+    private func resizeHandle(edge: Edge, height: CGFloat) -> some View {
+        let active = isSelected
+        let handleW: CGFloat = active ? 8 : 4
+        Rectangle()
+            .fill(AppTheme.actionOrange.opacity(active ? 0.95 : 0.5))
+            .frame(width: handleW, height: height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let deltaFrames = Int((value.translation.width / viewModel.pointsPerFrame).rounded())
+                        if edge == .leading {
+                            viewModel.updateClipDrawingRange(clip.id, start: clip.drawingStartFrame + deltaFrames)
+                        } else {
+                            viewModel.updateClipDrawingRange(clip.id, end: clip.drawingEndFrame + deltaFrames)
+                        }
+                    }
+            )
+    }
+
+    private func clipMiniMap(width: CGFloat, height: CGFloat) -> some View {
+        Canvas { context, size in
+            let authored = max(1, clip.drawingEndFrame - clip.drawingStartFrame + 1)
+            let tileCount = max(1, Int(size.width / 8))
+            for idx in 0..<tileCount {
+                let frameInClip = resolvedFrame(index: idx, authoredLength: authored)
+                let isGhost = frameInClip < clip.drawingStartFrame || frameInClip > clip.drawingEndFrame
+                let x = CGFloat(idx) * (size.width / CGFloat(tileCount))
+                let rect = CGRect(x: x, y: 3, width: (size.width / CGFloat(tileCount)) - 1, height: size.height - 6)
+                context.fill(Path(roundedRect: rect, cornerRadius: 1),
+                             with: .color(isGhost ? AppTheme.secondaryText.opacity(0.2) : AppTheme.actionOrange.opacity(0.35)))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func resolvedFrame(index: Int, authoredLength: Int) -> Int {
+        let authoredStart = clip.drawingStartFrame
+        let authoredEnd = clip.drawingEndFrame
+        switch clip.playbackMode {
+        case .hold:
+            return min(authoredStart + index, authoredEnd)
+        case .playOnce:
+            return min(authoredStart + index, authoredEnd + 1)
+        case .loop:
+            return authoredStart + (index % authoredLength)
+        case .pingPong:
+            let pingLen = max(1, authoredLength * 2 - 2)
+            let p = index % pingLen
+            let local = p < authoredLength ? p : pingLen - p
+            return authoredStart + local
+        case .random:
+            return Int.random(in: authoredStart...authoredEnd)
+        }
     }
 }
